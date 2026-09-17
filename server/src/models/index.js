@@ -1,0 +1,29 @@
+'use strict';
+
+/** Single import surface for every Mongoose model. */
+module.exports = {
+  User: require('./User'),
+  AttendeeProfile: require('./AttendeeProfile'),
+  ExhibitorProfile: require('./ExhibitorProfile'),
+  Expo: require('./Expo'),
+  ExpoApplication: require('./ExpoApplication'),
+  Booth: require('./Booth'),
+  FloorPlan: require('./FloorPlan'),
+  Speaker: require('./Speaker'),
+  Session: require('./Session'),
+  Product: require('./Product'),
+  Registration: require('./Registration'),
+  SessionRegistration: require('./SessionRegistration'),
+  AvailabilitySlot: require('./AvailabilitySlot'),
+  Appointment: require('./Appointment'),
+  Conversation: require('./Conversation'),
+  Message: require('./Message'),
+  Notification: require('./Notification'),
+  Payment: require('./Payment'),
+  Review: require('./Review'),
+  Feedback: require('./Feedback'),
+  SupportTicket: require('./SupportTicket'),
+  CheckIn: require('./CheckIn'),
+  Announcement: require('./Announcement'),
+  BoothVisit: require('./BoothVisit'),
+};
