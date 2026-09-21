@@ -86,7 +86,7 @@ const AdminSettings = () => {
             <div className="card-pad space-y-3 text-sm text-slate-600 dark:text-slate-300">
               <p className="flex items-start gap-2">
                 <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                Payment gateway keys live in <span className="kbd">server/.env</span>; the client never sees them.
+                Payment gateway keys live in <span className="kbd">backend/.env</span>; the client never sees them.
               </p>
               <p className="flex items-start gap-2">
                 <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
@@ -94,7 +94,7 @@ const AdminSettings = () => {
               </p>
               <p className="flex items-start gap-2">
                 <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
-                Uploads are stored under <span className="kbd">server/uploads</span> and served read-only.
+                Uploads are stored under <span className="kbd">backend/uploads</span> and served read-only.
               </p>
             </div>
           </Card>

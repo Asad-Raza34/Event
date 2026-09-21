@@ -10,8 +10,8 @@ coverage/
 .vite/
 
 # Runtime data (user uploads never belong in the repo)
-server/uploads/**
-!server/uploads/.gitkeep
+backend/uploads/**
+!backend/uploads/.gitkeep
 
 # Local mongo data / logs
 .mongo-data/

@@ -153,7 +153,7 @@ const RegisterPage = () => {
             htmlFor="adminInviteCode"
             required
             error={form.errors.adminInviteCode}
-            hint="Organizer accounts are invitation-only. Ask the platform owner for the code (see server/.env ADMIN_INVITE_CODE)."
+            hint="Organizer accounts are invitation-only. Ask the platform owner for the code (see backend/.env ADMIN_INVITE_CODE)."
           >
             <Input id="adminInviteCode" name="adminInviteCode" value={form.values.adminInviteCode} onChange={form.handleChange} />
           </Field>

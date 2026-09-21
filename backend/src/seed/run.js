@@ -16,7 +16,7 @@ const main = async () => {
   try {
     await connectDB();
   } catch (error) {
-    logger.error('Could not connect to MongoDB. Check MONGO_URI in server/.env.');
+    logger.error('Could not connect to MongoDB. Check MONGO_URI in backend/.env.');
     logger.error(error.message);
     if (!config.db.allowInMemory) process.exit(1);
     logger.warn('ALLOW_IN_MEMORY_DB is enabled, but an in-memory database is discarded on exit — start the API instead.');
