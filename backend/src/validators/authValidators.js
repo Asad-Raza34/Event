@@ -30,6 +30,26 @@ const login = [
   body('password').isString().notEmpty().withMessage('Password is required'),
 ];
 
+const loginVerifyCode = [
+  body('challengeToken').isString().isLength({ min: 32, max: 128 }).withMessage('Your sign-in session is invalid. Please sign in again.'),
+  body('code').isString().trim().isLength({ min: 4, max: 8 }).withMessage('Please enter the verification code from your e-mail'),
+];
+
+const loginResendCode = [
+  body('challengeToken').isString().isLength({ min: 32, max: 128 }).withMessage('Your sign-in session is invalid. Please sign in again.'),
+];
+
+const passkeyRegisterVerify = [
+  body('response').isObject().withMessage('A passkey registration response is required'),
+  body('deviceName').optional({ values: 'falsy' }).isString().isLength({ max: 80 }),
+  body('attachment').optional({ values: 'falsy' }).isString().isLength({ max: 40 }),
+];
+
+const passkeyLoginVerify = [
+  body('challengeToken').isString().isLength({ min: 32, max: 128 }).withMessage('Your sign-in session is invalid. Please sign in again.'),
+  body('response').isObject().withMessage('A passkey response is required'),
+];
+
 const forgotPassword = [body('email').trim().isEmail().withMessage('Please enter a valid email address').normalizeEmail()];
 
 const resetPassword = [
@@ -73,6 +93,10 @@ const adminUpdateUser = [
 module.exports = {
   register,
   login,
+  loginVerifyCode,
+  loginResendCode,
+  passkeyRegisterVerify,
+  passkeyLoginVerify,
   forgotPassword,
   resetPassword,
   changePassword,

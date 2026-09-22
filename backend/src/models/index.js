@@ -26,4 +26,6 @@ module.exports = {
   CheckIn: require('./CheckIn'),
   Announcement: require('./Announcement'),
   BoothVisit: require('./BoothVisit'),
+  LoginVerification: require('./LoginVerification'),
+  WebAuthnCredential: require('./WebAuthnCredential'),
 };

@@ -7,6 +7,7 @@ import { useForm } from '../../hooks/useForm';
 import { initials, mediaUrl } from '../../lib/utils';
 import Icon from '../../components/ui/Icon';
 import { Avatar, Button, Card, CardHeader, Field, FormError, Input, Tabs, Textarea, Toggle } from '../../components/ui';
+import PasskeySettings from './PasskeySettings';
 
 const AccountSettings = () => {
   const { user, refreshProfile, setProfile } = useAuth();
@@ -190,6 +191,7 @@ const AccountSettings = () => {
       )}
 
       {tab === 'security' && (
+        <div className="space-y-5">
         <Card>
           <CardHeader title="Security" subtitle="Update the password used to sign in" icon="lock" />
           <div className="card-pad space-y-4">
@@ -216,6 +218,9 @@ const AccountSettings = () => {
             </div>
           </div>
         </Card>
+
+        <PasskeySettings />
+        </div>
       )}
 
       {tab === 'notifications' && (

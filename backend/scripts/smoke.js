@@ -26,10 +26,20 @@ const record = (name, ok, detail = '') => {
 const api = () => request(app);
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
+/**
+ * Full sign-in: e-mail + password, then the e-mail verification code.
+ * Without SMTP configured the code is returned in demo mode (`devCode`).
+ */
 const login = async (email, password = 'Sample@123') => {
   const response = await api().post('/api/auth/login').send({ email, password });
   if (response.status !== 200) throw new Error(`login failed for ${email}: ${response.body.message}`);
-  return response.body.data.accessToken;
+
+  const challenge = response.body.data;
+  const verified = await api()
+    .post('/api/auth/login/verify-code')
+    .send({ challengeToken: challenge.challengeToken, code: challenge.devCode });
+  if (verified.status !== 200) throw new Error(`second factor failed for ${email}: ${verified.body.message}`);
+  return verified.body.data.accessToken;
 };
 
 const main = async () => {

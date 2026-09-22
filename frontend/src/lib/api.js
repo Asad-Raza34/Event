@@ -74,12 +74,17 @@ client.interceptors.response.use(
     }
 
     const payload = response?.data || {};
+    const firstIssue = Array.isArray(payload.errors) ? payload.errors[0] || null : null;
     const normalized = {
       status: status || 0,
       message:
         payload.message ||
         (status === 0 ? 'Cannot reach the server. Check your connection and try again.' : 'Something went wrong. Please try again.'),
       errors: payload.errors || null,
+      /** Machine-readable reason when the API provides one (OTP_EXPIRED, …). */
+      code: firstIssue?.code || null,
+      /** Seconds to wait, surfaced by resend rate limiting. */
+      retryAfterSeconds: Number.isFinite(firstIssue?.retryAfterSeconds) ? firstIssue.retryAfterSeconds : null,
       fieldErrors: Array.isArray(payload.errors)
         ? payload.errors.reduce((acc, item) => {
             if (item?.field) acc[item.field] = item.message || 'Invalid value';
@@ -105,7 +110,20 @@ export const api = {
 
   auth: {
     register: (payload) => post('/auth/register', payload),
+    /** Step 1: e-mail + password. Returns a temporary challenge, not a session. */
     login: (payload) => post('/auth/login', payload),
+    /** Step 2: the e-mail verification code — this issues the session. */
+    verifyLoginCode: (payload) => post('/auth/login/verify-code', payload),
+    resendLoginCode: (challengeToken) => post('/auth/login/resend-code', { challengeToken }),
+    loginChallenge: (challengeToken) => post('/auth/login/challenge', { challengeToken }),
+    /** Mobile second factor: device biometrics through WebAuthn/passkeys. */
+    passkeyLoginOptions: (challengeToken) => post('/auth/login/passkey/options', { challengeToken }),
+    passkeyLoginVerify: (payload) => post('/auth/login/passkey/verify', payload),
+    /** Passkey management for signed-in users. */
+    passkeys: () => get('/auth/passkeys'),
+    passkeyRegisterOptions: () => post('/auth/passkeys/options', {}),
+    passkeyRegisterVerify: (payload) => post('/auth/passkeys', payload),
+    removePasskey: (id) => del(`/auth/passkeys/${id}`),
     logout: () => post('/auth/logout', {}),
     logoutAll: () => post('/auth/logout-all', {}),
     refresh: () => post('/auth/refresh', {}),

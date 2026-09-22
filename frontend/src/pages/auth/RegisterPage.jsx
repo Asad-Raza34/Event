@@ -28,7 +28,7 @@ const RegisterPage = () => {
     jobTitle: '',
     city: '',
     country: '',
-    adminInviteCode: '',
+    ADMIN_INVITE_CODE: 'EVENTSPHERE-ADMIN',
   });
 
   const submit = async (values) => {

@@ -3,6 +3,11 @@
 const rateLimit = require('express-rate-limit');
 const config = require('../config');
 
+const toInt = (value, fallback) => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const base = {
   standardHeaders: true,
   legacyHeaders: false,
@@ -25,6 +30,21 @@ const authLimiter = rateLimit({
   message: { success: false, message: 'Too many authentication attempts. Please try again later.' },
 });
 
+/**
+ * Second-factor endpoints (code verification + resend). Tighter than the
+general auth limiter because these requests trigger e-mail delivery and are
+ * the natural target of brute-force attempts.
+ */
+const otpLimiter = rateLimit({
+  ...base,
+  windowMs: config.rateLimit.windowMs,
+  max: toInt(process.env.AUTH_OTP_RATE_LIMIT_MAX, 40),
+  message: {
+    success: false,
+    message: 'Too many verification attempts. Please wait a few minutes and try again.',
+  },
+});
+
 /** Very strict limiter for AI chat, which may call an external provider. */
 const aiLimiter = rateLimit({
   ...base,
@@ -33,4 +53,4 @@ const aiLimiter = rateLimit({
   message: { success: false, message: 'Too many assistant requests. Please wait a moment.' },
 });
 
-module.exports = { apiLimiter, authLimiter, aiLimiter };
+module.exports = { apiLimiter, authLimiter, otpLimiter, aiLimiter };

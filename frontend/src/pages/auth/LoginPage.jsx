@@ -6,6 +6,7 @@ import { useForm } from '../../hooks/useForm';
 import { DEMO_ACCOUNTS, ROLE_HOME } from '../../lib/constants';
 import Icon from '../../components/ui/Icon';
 import { Button, Field, FormError, Input } from '../../components/ui';
+import LoginVerification from './LoginVerification';
 
 const LoginPage = () => {
   const { login } = useAuth();
@@ -13,26 +14,82 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
+  const [challenge, setChallenge] = useState(null);
   const form = useForm({ email: '', password: '' });
 
+  /**
+   * Step 1 — verify the e-mail/password pair.
+   * For admin users: API returns a temporary challenge (2FA required).
+   * For non-admin users: API completes sign-in immediately and returns user session.
+   */
   const submit = async (values) => {
-    const user = await login({ email: values.email.trim(), password: values.password });
-    toast.success(`Welcome back, ${user.name.split(' ')[0]}!`);
+    const data = await login({ email: values.email.trim(), password: values.password });
+
+    // Non-admin users: direct login completed, navigate to dashboard
+    if (!data.mfaRequired) {
+      toast.success(`Welcome back, ${data.user.name.split(' ')[0]}!`, { title: 'Signed in' });
+      navigate(location.state?.from || ROLE_HOME[data.user.role] || '/', { replace: true });
+      return data;
+    }
+
+    // Admin users: 2FA required, show verification screen
+    setChallenge(data);
+    return data;
+  };
+
+  const completeSignIn = (user) => {
+    toast.success(`Welcome back, ${user.name.split(' ')[0]}!`, { title: 'Verified' });
     navigate(location.state?.from || ROLE_HOME[user.role] || '/', { replace: true });
   };
 
+  /**
+   * Demo shortcuts fill the form and immediately continue. They pass the
+   * credentials explicitly because the form state has not re-rendered yet.
+   */
   const useDemoAccount = async (account) => {
     form.setValue('email', account.email);
     form.setValue('password', account.password);
-    const result = await form.submit(submit);
-    if (!result.ok) toast.error('Demo sign-in failed — run the seed script first (npm run seed)');
+    form.clearErrors();
+    try {
+      const data = await login({ email: account.email, password: account.password });
+
+      // Non-admin demo accounts: direct login
+      if (!data.mfaRequired) {
+        toast.success(`Welcome back, ${data.user.name.split(' ')[0]}!`, { title: 'Signed in' });
+        navigate(location.state?.from || ROLE_HOME[data.user.role] || '/', { replace: true });
+        return;
+      }
+
+      // Admin demo accounts: show verification screen
+      setChallenge(data);
+    } catch (error) {
+      form.setErrors(error?.fieldErrors || {});
+      form.setFormError(error?.message || 'Demo sign-in failed — run the seed script first (npm run seed)');
+      toast.error('Demo sign-in failed — run the seed script first (npm run seed)');
+    }
   };
+
+  // ------------------------------------------------ second factor screen ----
+  if (challenge) {
+    return (
+      <LoginVerification
+        challenge={challenge}
+        onVerified={completeSignIn}
+        onRestart={() => {
+          setChallenge(null);
+          form.setValue('password', '');
+          form.clearErrors();
+        }}
+        onBack={() => setChallenge(null)}
+      />
+    );
+  }
 
   return (
     <div>
       <h1 className="text-2xl font-bold">Sign in to EventSphere</h1>
       <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-        Access your organizer, exhibitor or attendee dashboard.
+        Access your organizer, exhibitor or attendee dashboard. We&rsquo;ll e-mail you a one-time verification code.
       </p>
 
       <form
@@ -89,8 +146,14 @@ const LoginPage = () => {
         </div>
 
         <Button type="submit" className="w-full" size="lg" loading={form.submitting} icon="logout">
-          Sign in
+          Continue
         </Button>
+
+        <p className="flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
+          <Icon name="lock" className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          For your security we send a one-time code to your registered e-mail, or ask for your device biometrics, before the
+          session starts.
+        </p>
       </form>
 
       <div className="mt-7 rounded-2xl border border-slate-200 p-4 dark:border-slate-800">

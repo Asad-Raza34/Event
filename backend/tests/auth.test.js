@@ -1,6 +1,6 @@
 'use strict';
 
-const { api, url, auth, registerUser, login, models, DEMO_PASSWORD, uniqueEmail } = require('./helpers');
+const { api, url, auth, registerUser, login, loginDirect, models, DEMO_PASSWORD, uniqueEmail } = require('./helpers');
 
 describe('Authentication', () => {
   describe('POST /api/auth/register', () => {
@@ -65,11 +65,58 @@ describe('Authentication', () => {
   });
 
   describe('POST /api/auth/login', () => {
-    it('authenticates with valid credentials', async () => {
-      const { email } = await registerUser();
-      const response = await api().post(url('/auth/login')).send({ email, password: DEMO_PASSWORD }).expect(200);
-      expect(response.body.data.accessToken).toBeTruthy();
-      expect(response.body.message).toMatch(/welcome back/i);
+    describe('Admin users (require 2FA)', () => {
+      it('starts the second factor without issuing a session', async () => {
+        const { email } = await registerUser({ role: 'admin' });
+        const response = await api().post(url('/auth/login')).send({ email, password: DEMO_PASSWORD }).expect(200);
+
+        // No session yet — only a temporary challenge until the code is verified.
+        expect(response.body.data.accessToken).toBeUndefined();
+        expect(response.body.data.mfaRequired).toBe(true);
+        expect(response.body.data.challengeToken).toBeTruthy();
+        expect(response.body.data.maskedEmail).toMatch(/^.+@.+$/);
+        expect(response.body.data.maskedEmail).not.toBe(email);
+
+        // The code is never exposed outside demo mode.
+        expect(response.body.data).not.toHaveProperty('code');
+        expect(response.body.data).not.toHaveProperty('codeHash');
+      });
+
+      it('issues the session once the e-mail code is verified', async () => {
+        const { email } = await registerUser({ role: 'admin' });
+        const challenge = (await api().post(url('/auth/login')).send({ email, password: DEMO_PASSWORD })).body.data;
+
+        const verified = await api()
+          .post(url('/auth/login/verify-code'))
+          .send({ challengeToken: challenge.challengeToken, code: challenge.devCode })
+          .expect(200);
+
+        expect(verified.body.data.accessToken).toBeTruthy();
+        expect(verified.body.data.user.email).toBe(email);
+        expect(verified.body.message).toMatch(/welcome back/i);
+      });
+    });
+
+    describe('Non-admin users (direct login, no 2FA)', () => {
+      it('issues session immediately for attendee', async () => {
+        const { email } = await registerUser({ role: 'attendee' });
+        const response = await api().post(url('/auth/login')).send({ email, password: DEMO_PASSWORD }).expect(200);
+
+        expect(response.body.data.mfaRequired).toBe(false);
+        expect(response.body.data.accessToken).toBeTruthy();
+        expect(response.body.data.user.email).toBe(email);
+        expect(response.body.data.user.role).toBe('attendee');
+      });
+
+      it('issues session immediately for exhibitor', async () => {
+        const { email } = await registerUser({ role: 'exhibitor' });
+        const response = await api().post(url('/auth/login')).send({ email, password: DEMO_PASSWORD }).expect(200);
+
+        expect(response.body.data.mfaRequired).toBe(false);
+        expect(response.body.data.accessToken).toBeTruthy();
+        expect(response.body.data.user.email).toBe(email);
+        expect(response.body.data.user.role).toBe('exhibitor');
+      });
     });
 
     it('rejects a wrong password without revealing which field failed', async () => {
@@ -129,6 +176,7 @@ describe('Authentication', () => {
       expect(response.body.data.accessToken).toBeTruthy();
 
       await api().post(url('/auth/login')).send({ email: attendee.email, password: DEMO_PASSWORD }).expect(401);
+      // Non-admin users now have direct login (no 2FA)
       await api().post(url('/auth/login')).send({ email: attendee.email, password: 'BrandNewPass99' }).expect(200);
     });
 
@@ -153,6 +201,7 @@ describe('Authentication', () => {
         .send({ token, email: attendee.email, password: 'ResetPassword77' })
         .expect(200);
 
+      // Non-admin users now have direct login (no 2FA)
       await api().post(url('/auth/login')).send({ email: attendee.email, password: 'ResetPassword77' }).expect(200);
       await api().post(url('/auth/reset-password')).send({ token, password: 'AnotherPassword11' }).expect(400);
     });

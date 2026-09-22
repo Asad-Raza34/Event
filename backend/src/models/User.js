@@ -40,6 +40,9 @@ const userSchema = new mongoose.Schema(
     tokenVersion: { type: Number, default: 0, select: false },
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
+    /** WebAuthn registration ceremony challenge (single-use, short-lived). */
+    webauthnChallengeHash: { type: String, default: null, select: false },
+    webauthnChallengeExpiresAt: { type: Date, default: null, select: false },
     notificationPreferences: {
       email: { type: Boolean, default: true },
       inApp: { type: Boolean, default: true },
@@ -57,6 +60,8 @@ const userSchema = new mongoose.Schema(
         delete ret.tokenVersion;
         delete ret.passwordResetToken;
         delete ret.passwordResetExpires;
+        delete ret.webauthnChallengeHash;
+        delete ret.webauthnChallengeExpiresAt;
         delete ret.__v;
         return ret;
       },

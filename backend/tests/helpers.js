@@ -39,9 +39,43 @@ const registerUser = async (overrides = {}) => {
   return { user, accessToken, token: accessToken, password: payload.password, email, role };
 };
 
-const login = async (email, password = DEMO_PASSWORD) => {
+/**
+ * Step 1 of sign-in: submit the e-mail + password pair and return the
+ * temporary challenge (no session is issued at this point).
+ * Only works for admin users (who require 2FA).
+ */
+const startLogin = async (email, password = DEMO_PASSWORD) => {
   const response = await api().post(url('/auth/login')).send({ email, password }).expect(200);
+  const data = response.body.data;
+  expect(data.mfaRequired).toBe(true);
+  expect(data.accessToken).toBeUndefined();
+  return data;
+};
+
+/**
+ * Full sign-in for admin users: credentials → e-mail verification code → session.
+ * In test/demo mode the code is returned (`devCode`) because SMTP is not
+ * configured, exactly like the password-reset token in demo mode.
+ */
+const login = async (email, password = DEMO_PASSWORD) => {
+  const challenge = await startLogin(email, password);
+  const response = await api()
+    .post(url('/auth/login/verify-code'))
+    .send({ challengeToken: challenge.challengeToken, code: challenge.devCode })
+    .expect(200);
   const { user, accessToken } = response.body.data;
+  return { user, accessToken, token: accessToken };
+};
+
+/**
+ * Full sign-in for non-admin users (attendee, exhibitor): credentials → session (no 2FA).
+ */
+const loginDirect = async (email, password = DEMO_PASSWORD) => {
+  const response = await api().post(url('/auth/login')).send({ email, password }).expect(200);
+  const data = response.body.data;
+  expect(data.mfaRequired).toBe(false);
+  expect(data.accessToken).toBeTruthy();
+  const { user, accessToken } = data;
   return { user, accessToken, token: accessToken };
 };
 
@@ -130,6 +164,7 @@ module.exports = {
   auth,
   registerUser,
   login,
+  startLogin,
   createPublishedExpo,
   approveApplication,
   createBooths,

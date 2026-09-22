@@ -53,18 +53,59 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('eventsphere:session-expired', handleExpired);
   }, []);
 
-  const login = useCallback(
-    async (credentials) => {
-      const response = await api.auth.login(credentials);
-      setToken(response.data.accessToken);
-      applySession({ user: response.data.user });
-      setSessionExpired(false);
-      // Fetch the role profile in the background so dashboards render instantly.
-      api.auth.me().then((me) => applySession(me.data)).catch(() => {});
-      return response.data.user;
-    },
-    [applySession],
-  );
+/**
+ * Apply a completed sign-in: this is the ONLY place the access token is stored,
+ * and it runs only after the second factor (e-mail code or passkey) succeeded.
+ */
+const completeLogin = useCallback(
+  (payload) => {
+    setToken(payload.accessToken);
+    applySession({ user: payload.user });
+    setSessionExpired(false);
+    // Fetch the role profile in the background so dashboards render instantly.
+    api.auth.me().then((me) => applySession(me.data)).catch(() => {});
+    return payload.user;
+  },
+  [applySession],
+);
+
+/**
+ * Step 1 of sign-in: e-mail + password.
+ * For admin users: returns a temporary challenge for the verification screen (2FA required).
+ * For non-admin users: completes sign-in immediately and returns the user session.
+ */
+const login = useCallback(async (credentials) => {
+  const response = await api.auth.login({ ...credentials, email: String(credentials.email || '').trim() });
+  setSessionExpired(false);
+  const data = response.data;
+
+  // Non-admin users: direct login completed, apply session
+  if (!data.mfaRequired) {
+    completeLogin(data);
+    return { ...data, mfaRequired: false };
+  }
+
+  // Admin users: 2FA required, return challenge for verification screen
+  return data;
+}, [completeLogin]);
+
+/** Step 2 of sign-in: verify the e-mail code and only then open the session. */
+const verifyLoginCode = useCallback(
+  async ({ challengeToken, code }) => {
+    const response = await api.auth.verifyLoginCode({ challengeToken, code });
+    return completeLogin(response.data);
+  },
+  [completeLogin],
+);
+
+/** Mobile second factor: complete sign-in with a device passkey assertion. */
+const verifyPasskeyLogin = useCallback(
+  async ({ challengeToken, response }) => {
+    const verification = await api.auth.passkeyLoginVerify({ challengeToken, response });
+    return completeLogin(verification.data);
+  },
+  [completeLogin],
+);
 
   const register = useCallback(
     async (payload) => {
@@ -112,13 +153,16 @@ export const AuthProvider = ({ children }) => {
       isAttendee: user?.role === ROLES.ATTENDEE,
       homeRoute: ROLE_HOME[user?.role] || '/',
       login,
+      verifyLoginCode,
+      verifyPasskeyLogin,
+      completeLogin,
       register,
       logout,
       refreshProfile,
       setProfile,
       updateUser: (updates) => setUser((current) => ({ ...current, ...updates })),
     }),
-    [user, profile, loading, sessionExpired, login, register, logout, refreshProfile],
+    [user, profile, loading, sessionExpired, login, verifyLoginCode, verifyPasskeyLogin, completeLogin, register, logout, refreshProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

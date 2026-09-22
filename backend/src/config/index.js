@@ -103,6 +103,44 @@ const config = {
     },
   },
 
+  /**
+   * Multi-step login (email + password + second factor).
+   * The e-mail verification code and the WebAuthn/passkey flow both live here.
+   */
+  mfa: {
+    codeLength: toInt(process.env.AUTH_OTP_LENGTH, 6),
+    expiryMinutes: toInt(process.env.AUTH_OTP_EXPIRY_MINUTES, 10),
+    maxAttempts: toInt(process.env.AUTH_OTP_MAX_ATTEMPTS, 5),
+    resendCooldownSeconds: toInt(process.env.AUTH_OTP_RESEND_COOLDOWN_SECONDS, 30),
+    maxResends: toInt(process.env.AUTH_OTP_MAX_RESENDS, 5),
+    // Overall lifetime of the temporary login challenge (password accepted,
+    // second factor pending). Slightly longer than the code itself.
+    challengeTtlMinutes: toInt(process.env.AUTH_MFA_CHALLENGE_TTL_MINUTES, 20),
+  },
+
+  /**
+   * Admin-specific MFA settings (override base MFA settings for admin users).
+   * If not set, falls back to base MFA settings.
+   */
+  adminMfa: {
+    codeLength: toInt(process.env.AUTH_ADMIN_OTP_LENGTH, undefined),
+    expiryMinutes: toInt(process.env.AUTH_ADMIN_OTP_EXPIRY_MINUTES, undefined),
+    maxAttempts: toInt(process.env.AUTH_ADMIN_OTP_MAX_ATTEMPTS, undefined),
+    resendCooldownSeconds: toInt(process.env.AUTH_ADMIN_OTP_RESEND_COOLDOWN_SECONDS, undefined),
+    maxResends: toInt(process.env.AUTH_ADMIN_OTP_MAX_RESENDS, undefined),
+    challengeTtlMinutes: toInt(process.env.AUTH_ADMIN_MFA_CHALLENGE_TTL_MINUTES, undefined),
+  },
+
+  webauthn: {
+    rpName: process.env.AUTH_WEBAUTHN_RP_NAME || 'EventSphere',
+    // Defaults work for local development against the Vite dev server.
+    rpId: process.env.AUTH_WEBAUTHN_RP_ID || new URL(process.env.CLIENT_URL || 'http://localhost:5173').hostname,
+    origin: process.env.AUTH_WEBAUTHN_ORIGIN || process.env.CLIENT_URL || 'http://localhost:5173',
+    get enabled() {
+      return Boolean(this.rpId && this.origin);
+    },
+  },
+
   demoMode: toBool(process.env.DEMO_MODE, !isProd),
   // Organizer self-registration is gated behind an invite code.
   adminInviteCode: process.env.ADMIN_INVITE_CODE || (isProd ? '' : 'EVENTSPHERE-ADMIN'),

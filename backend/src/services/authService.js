@@ -8,6 +8,8 @@ const { signAccessToken, signRefreshToken, verifyRefreshToken } = require('../ut
 const { randomToken, sha256 } = require('../utils/helpers');
 const { sendMail, passwordResetEmail } = require('../utils/mailer');
 const notificationService = require('./notificationService');
+const loginCodeService = require('./loginCodeService');
+const passkeyService = require('./passkeyService');
 
 /** Create the role-specific profile document that lives next to the user. */
 const ensureProfile = async (user) => {
@@ -84,7 +86,13 @@ const register = async (payload) => {
   return { user: user.toJSON(), ...issueTokens(user) };
 };
 
-const login = async ({ email, password }) => {
+/**
+ * Step 1 of sign-in: verify the e-mail + password.
+ * For admin users: open a temporary challenge and deliver a one-time code (2FA required).
+ * For non-admin users (attendee/exhibitor): issue session immediately (no 2FA).
+ * No session is issued for admin until the code or passkey is verified.
+ */
+const login = async ({ email, password, ip }) => {
   const user = await User.findByEmailWithPassword(email);
   if (!user) throw ApiError.unauthorized('Invalid email or password');
 
@@ -92,10 +100,97 @@ const login = async ({ email, password }) => {
   if (!matches) throw ApiError.unauthorized('Invalid email or password');
   if (!user.isActive) throw ApiError.forbidden('Your account has been deactivated. Please contact support.');
 
+  // Admin users require second-factor authentication (OTP or WebAuthn/passkey)
+  if (user.role === 'admin') {
+    const [challenge, passkeyCount] = await Promise.all([
+      loginCodeService.createChallenge(user, { ip, isAdmin: true }),
+      passkeyService.countForUser(user._id),
+    ]);
+
+    return {
+      mfaRequired: true,
+      // Minimal identity for the verification screen — no role data or tokens.
+      name: user.name,
+      maskedEmail: challenge.maskedEmail,
+      challengeToken: challenge.challengeToken,
+      codeExpiresAt: challenge.expiresAt,
+      cooldownSeconds: challenge.cooldownSeconds,
+      codeLength: challenge.codeLength,
+      resendsRemaining: challenge.resendsRemaining,
+      emailDelivered: challenge.delivered,
+      passkeyAvailable: passkeyCount > 0,
+      ...(challenge.devCode ? { devCode: challenge.devCode } : {}),
+    };
+  }
+
+  // Non-admin users (attendee, exhibitor) get direct login — no 2FA required
+  const result = await finalizeLogin(user);
+  return { ...result, mfaRequired: false };
+};
+
+/** Step 2 of sign-in: the e-mail code was correct — issue the real session. */
+const verifyLoginCode = async ({ challengeToken, code }) => {
+  const user = await loginCodeService.verifyCode(challengeToken, code);
+  return finalizeLogin(user);
+};
+
+/** Resend a fresh code for an open challenge (cooldown + budget enforced). */
+const resendLoginCode = async ({ challengeToken }) => loginCodeService.resendCode(challengeToken);
+
+/** Status of an open challenge — used to restore the screen after a reload. */
+const loginChallengeStatus = async (challengeToken) => {
+  const challenge = await loginCodeService.findActiveChallenge(challengeToken);
+  if (!challenge) return { valid: false };
+  const user = await User.findById(challenge.user);
+  const passkeyCount = user ? await passkeyService.countForUser(user._id) : 0;
+  const mfaConfig = challenge.isAdmin && config.adminMfa ? config.adminMfa : config.mfa;
+  const resendCooldownMs = (mfaConfig.resendCooldownSeconds ?? config.mfa.resendCooldownSeconds) * 1000;
+  const maxResends = mfaConfig.maxResends ?? config.mfa.maxResends;
+  return {
+    valid: true,
+    maskedEmail: user ? loginCodeService.maskEmail(user.email) : '',
+    codeExpiresAt: challenge.expiresAt,
+    cooldownSeconds: Math.max(
+      0,
+      Math.ceil((resendCooldownMs - (Date.now() - (challenge.lastResendAt?.getTime() || 0))) / 1000),
+    ),
+    resendsRemaining: Math.max(0, maxResends - challenge.resendCount),
+    passkeyAvailable: passkeyCount > 0,
+  };
+};
+
+/** Mark the login and hand out the access/refresh token pair. */
+const finalizeLogin = async (user) => {
   user.lastLoginAt = new Date();
   await user.save({ validateBeforeSave: false });
-
   return { user: user.toJSON(), ...issueTokens(user) };
+};
+
+/** Begin a WebAuthn assertion ceremony for an open login challenge. */
+const beginPasskeyLogin = async ({ challengeToken }) => {
+  const challenge = await loginCodeService.findActiveChallenge(challengeToken);
+  if (!challenge) throw ApiError.unauthorized('This verification session has expired. Please sign in again.');
+  const user = await User.findById(challenge.user);
+  if (!user || !user.isActive) throw ApiError.unauthorized('This account is no longer available.');
+
+  const options = await passkeyService.authenticationOptions(user);
+  await loginCodeService.setWebAuthnChallenge(challengeToken, options.challenge);
+  return { options };
+};
+
+/** Step 2 of sign-in via device biometrics/passkey. */
+const verifyPasskeyLogin = async ({ challengeToken, response }) => {
+  const challenge = await loginCodeService.findActiveChallenge(challengeToken);
+  if (!challenge) throw ApiError.unauthorized('This verification session has expired. Please sign in again.');
+  const user = await User.findById(challenge.user);
+  if (!user || !user.isActive) throw ApiError.unauthorized('This account is no longer available.');
+
+  const expectedChallenge = await loginCodeService.consumeWebAuthnChallenge(challenge);
+  await passkeyService.verifyAuthentication(user, response, { expectedChallenge });
+
+  // A successful assertion resolves the challenge exactly like the code would.
+  await loginCodeService.markChallengeUsed(challenge);
+  return finalizeLogin(user);
 };
 
 /**
@@ -115,7 +210,11 @@ const refresh = async (token) => {
   return { user: user.toJSON(), ...issueTokens(user) };
 };
 
-const logout = (userId) => ({ success: true, userId });
+const logout = async (userId) => {
+  // Any half-finished second-factor challenge is dropped with the session.
+  if (userId) await loginCodeService.revokeForUser(userId);
+  return { success: true, userId };
+};
 
 /** Invalidate every refresh token for the account (all devices). */
 const logoutAll = async (userId) => {
@@ -157,6 +256,7 @@ const resetPassword = async ({ token, email, password }) => {
   user.passwordResetExpires = undefined;
   user.tokenVersion = Number(user.tokenVersion || 0) + 1; // log out everywhere
   await user.save();
+  await loginCodeService.revokeForUser(user._id);
 
   await notificationService.create({
     userId: user._id,
@@ -177,6 +277,7 @@ const changePassword = async (user, { currentPassword, newPassword }) => {
   fresh.password = newPassword;
   fresh.tokenVersion = Number(fresh.tokenVersion || 0) + 1;
   await fresh.save();
+  await loginCodeService.revokeForUser(fresh._id);
 
   return { message: 'Password updated successfully', ...issueTokens(fresh) };
 };
@@ -196,6 +297,12 @@ const me = async (userId) => {
 module.exports = {
   register,
   login,
+  verifyLoginCode,
+  resendLoginCode,
+  loginChallengeStatus,
+  beginPasskeyLogin,
+  verifyPasskeyLogin,
+  finalizeLogin,
   refresh,
   logout,
   logoutAll,
